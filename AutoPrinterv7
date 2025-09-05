@@ -1,0 +1,58 @@
+# AutoPrinter_v6_ONE — BR-LB01-PDF only
+
+# --- SETTINGS ---
+$watchPath = "C:\PrintClient\Temp\BR-LB01-PDF"
+$printer   = "BR-LB01-PDF"
+
+# Resolve Ghostscript path
+$gs = (Get-Command gswin64c -ErrorAction SilentlyContinue).Path
+if (-not $gs) { $gs = "C:\Program Files\gs\gs10.03.1\bin\gswin64c.exe" }
+
+# --- HELPERS ---
+function Wait-FileReady([string]$path, [int]$tries=30, [int]$delayMs=300) {
+  for ($i=0; $i -lt $tries; $i++) {
+    try {
+      $s = [IO.File]::Open($path,'Open','Read','None'); $s.Close(); return $true
+    } catch { Start-Sleep -Milliseconds $delayMs }
+  }
+  return $false
+}
+
+# --- WATCHER ---
+$watcher = New-Object IO.FileSystemWatcher
+$watcher.Path = $watchPath
+$watcher.Filter = "*.pdf"
+$watcher.IncludeSubdirectories = $false
+$watcher.NotifyFilter = [IO.NotifyFilters]'FileName, Size, LastWrite'
+$watcher.EnableRaisingEvents = $true
+
+# Ensure log folder
+$logDir = "$env:ProgramData\AutoPrinter"
+New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+$logOut = Join-Path $logDir "gs-out.log"
+$logErr = Join-Path $logDir "gs-err.log"
+
+Register-ObjectEvent -InputObject $watcher -EventName Created -Action {
+  $filePath = $Event.SourceEventArgs.FullPath
+
+  if (-not (Wait-FileReady -path $filePath)) {
+    Write-Host "[$(Get-Date -Format HH:mm:ss)] Skip (locked): $filePath"
+    return
+  }
+
+  $args = @(
+    "-dBATCH",
+    "-dNOPAUSE",
+    "-dNOSAFER",
+    "-sDEVICE=mswinpr2",
+    "-sOutputFile=%printer%$using:printer",
+    "-f", $filePath
+  )
+
+  Write-Host "[$(Get-Date -Format HH:mm:ss)] Print $filePath -> $using:printer"
+  Start-Process -FilePath $using:gs -ArgumentList $args -NoNewWindow -Wait `
+    -RedirectStandardOutput $using:logOut -RedirectStandardError $using:logErr
+} | Out-Null
+
+Write-Host "Watching $watchPath …  Ctrl+C to stop."
+while ($true) { Start-Sleep -Seconds 10 }
