@@ -1,0 +1,2 @@
+& $gs -dBATCH -dNOPAUSE -dNOSAFER -sDEVICE=mswinpr2 `
+  -sOutputFile=%printer%BR-LB01-PDF -f "C:\PrintClient\test.pdf"
